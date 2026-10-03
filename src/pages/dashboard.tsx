@@ -152,6 +152,40 @@ export default function DashboardPage() {
           </button>
         </div>
 
+        {/* Quick Room Code Direct Join Bar */}
+        <div className="mb-6 p-3.5 bg-slate-900/90 rounded-2xl border-2 border-slate-700 flex flex-col sm:flex-row items-center justify-between gap-3 shadow-md">
+          <div className="flex items-center gap-2 text-xs font-black text-amber-400 font-doodle uppercase">
+            <Sparkles className="w-4 h-4 text-amber-400" />
+            <span>Have a room code?</span>
+          </div>
+
+          <form
+            onSubmit={(e) => {
+              e.preventDefault();
+              const input = (e.currentTarget.elements.namedItem('roomCode') as HTMLInputElement).value.trim();
+              if (input) {
+                soundManager.playPop();
+                router.push(`/room/${input.toUpperCase()}`);
+              }
+            }}
+            className="flex items-center gap-2 w-full sm:w-auto"
+          >
+            <input
+              name="roomCode"
+              type="text"
+              placeholder="e.g. 7F3K9"
+              maxLength={20}
+              className="px-3.5 py-2 bg-slate-800 border border-slate-600 focus:border-sky-400 rounded-xl text-xs font-mono font-black text-white placeholder:text-slate-500 uppercase flex-1 sm:w-36 focus:outline-none"
+            />
+            <button
+              type="submit"
+              className="px-4 py-2 bg-sky-400 hover:bg-sky-300 text-slate-950 font-black text-xs rounded-xl border border-slate-950 shadow-sm font-doodle uppercase tracking-wider whitespace-nowrap"
+            >
+              Join Now
+            </button>
+          </form>
+        </div>
+
         {/* Good Vibes Only Sketch matching Screen 2 */}
         <div className="text-center my-2 select-none">
           <div className="inline-flex items-center gap-2 px-5 py-2 rounded-full bg-slate-800/80 border-2 border-dashed border-amber-400/50 text-amber-300 font-doodle text-sm">

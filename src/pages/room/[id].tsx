@@ -1,10 +1,10 @@
 import React, { useState, useEffect } from 'react';
 import { useRouter } from 'next/router';
 import { useAuth } from '@/context/AuthContext';
-import { useSocket, RoomPlayer } from '@/context/SocketContext';
+import { useSocket } from '@/context/SocketContext';
 import { Navbar } from '@/components/Navbar';
-import { Avatar } from '@/components/Avatar';
-import { DrawingCanvas, CanvasStroke } from '@/components/DrawingCanvas';
+import { Avatar, AVATAR_PRESETS } from '@/components/Avatar';
+import { DrawingCanvas } from '@/components/DrawingCanvas';
 import { WordSelector } from '@/components/WordSelector';
 import { GuessingPanel } from '@/components/GuessingPanel';
 import { InRoomLeaderboard } from '@/components/InRoomLeaderboard';
@@ -15,30 +15,28 @@ import {
   Users,
   Clock,
   Share2,
-  Settings,
   Sparkles,
   Play,
   Check,
   Copy,
-  Crown,
-  Lock,
-  Globe,
-  HelpCircle,
-  Plus
+  Plus,
+  ArrowLeft,
+  MessageCircle,
+  LogIn,
+  UserPlus
 } from 'lucide-react';
 
 export default function RoomPage() {
   const router = useRouter();
   const { id } = router.query;
-  const roomId = typeof id === 'string' ? id : '';
+  const rawId = typeof id === 'string' ? id : '';
 
-  const { user, isLoading: authLoading } = useAuth();
+  const { user, isLoading: authLoading, register, playAsGuest } = useAuth();
   const {
     roomState,
     privateWordChoices,
     drawerSecretWord,
     closeGuessHint,
-    correctGuessNotification,
     roundEndedPayload,
     gameOverPayload,
     joinRoom,
@@ -54,19 +52,44 @@ export default function RoomPage() {
   } = useSocket();
 
   const [copied, setCopied] = useState(false);
+  const [copiedCode, setCopiedCode] = useState(false);
   const [timeLeft, setTimeLeft] = useState(0);
   const [showShareModal, setShowShareModal] = useState(false);
   const [activeTabMobile, setActiveTabMobile] = useState<'canvas' | 'leaderboard'>('canvas');
+  const [resolvedRoomId, setResolvedRoomId] = useState<string>('');
+  const [resolvedCode, setResolvedCode] = useState<string>('');
 
-  // Join room when user and roomId are ready
+  // Unauthenticated Guest Form State
+  const [guestName, setGuestName] = useState('');
+  const [guestAvatar, setGuestAvatar] = useState('avatar_1');
+  const [isJoiningGuest, setIsJoiningGuest] = useState(false);
+  const [guestError, setGuestError] = useState('');
+
+  // Resolve room code or ID from server
   useEffect(() => {
-    if (!authLoading && !user) {
-      router.push('/');
-      return;
-    }
+    if (!rawId) return;
 
-    if (user && roomId) {
-      joinRoom(roomId, {
+    fetch(`/api/rooms/${rawId}`)
+      .then(res => res.json())
+      .then(data => {
+        if (data.id) {
+          setResolvedRoomId(data.id);
+          setResolvedCode(data.code || data.id.replace('room_', ''));
+        } else {
+          setResolvedRoomId(rawId.startsWith('room_') ? rawId : `room_${rawId.toUpperCase()}`);
+          setResolvedCode(rawId.replace('room_', '').toUpperCase());
+        }
+      })
+      .catch(() => {
+        setResolvedRoomId(rawId);
+        setResolvedCode(rawId.replace('room_', '').toUpperCase());
+      });
+  }, [rawId]);
+
+  // Join room when user and resolvedRoomId are ready
+  useEffect(() => {
+    if (user && resolvedRoomId) {
+      joinRoom(resolvedRoomId, {
         id: user.id,
         username: user.username,
         avatar: user.avatar
@@ -74,11 +97,11 @@ export default function RoomPage() {
     }
 
     return () => {
-      if (user && roomId) {
-        leaveRoom(roomId, user.id);
+      if (user && resolvedRoomId) {
+        leaveRoom(resolvedRoomId, user.id);
       }
     };
-  }, [user, roomId, authLoading]);
+  }, [user, resolvedRoomId]);
 
   // Synchronized round timer
   useEffect(() => {
@@ -99,26 +122,194 @@ export default function RoomPage() {
     return () => clearInterval(interval);
   }, [roomState]);
 
-  const handleCopyLink = () => {
+  const getShareLink = () => {
     const origin = typeof window !== 'undefined' ? window.location.origin : 'https://pictobuzz.com';
-    const link = `${origin}/room/${roomId}`;
+    const code = resolvedCode || roomState?.code || rawId.replace('room_', '');
+    return `${origin}/room/${code}`;
+  };
+
+  const handleCopyLink = () => {
+    const link = getShareLink();
     navigator.clipboard.writeText(link);
     setCopied(true);
     soundManager.playPop();
     setTimeout(() => setCopied(false), 2500);
   };
 
+  const handleCopyCode = () => {
+    const code = resolvedCode || roomState?.code || rawId.replace('room_', '').toUpperCase();
+    navigator.clipboard.writeText(code);
+    setCopiedCode(true);
+    soundManager.playPop();
+    setTimeout(() => setCopiedCode(false), 2500);
+  };
+
+  const handleNativeShare = async () => {
+    const link = getShareLink();
+    const code = resolvedCode || roomState?.code || rawId.replace('room_', '').toUpperCase();
+    if (typeof navigator !== 'undefined' && navigator.share) {
+      try {
+        await navigator.share({
+          title: 'Join my Picto Buzz Room!',
+          text: `Join my Pictionary drawing game on Picto Buzz! Room Code: ${code}`,
+          url: link
+        });
+        soundManager.playPop();
+      } catch {}
+    } else {
+      handleCopyLink();
+    }
+  };
+
+  const handleWhatsAppShare = () => {
+    const link = getShareLink();
+    const code = resolvedCode || roomState?.code || rawId.replace('room_', '').toUpperCase();
+    const text = encodeURIComponent(`🎨 Join my Pictionary room on Picto Buzz! Room code: *${code}*\nPlay here: ${link}`);
+    window.open(`https://api.whatsapp.com/send?text=${text}`, '_blank');
+    soundManager.playPop();
+  };
+
+  const handleQuickGuestJoin = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setGuestError('');
+    setIsJoiningGuest(true);
+    soundManager.playPop();
+
+    const name = guestName.trim() || `Doodler_${Math.floor(1000 + Math.random() * 9000)}`;
+    const guestEmail = `guest_${Date.now()}_${Math.floor(Math.random() * 10000)}@pictobuzz.local`;
+
+    const res = await register(name, guestEmail, 'guestPassword123', guestAvatar);
+    setIsJoiningGuest(false);
+
+    if (res.success) {
+      soundManager.playFanfare();
+    } else {
+      // Fallback to anonymous guest play
+      const guestRes = await playAsGuest();
+      if (guestRes.success) {
+        soundManager.playFanfare();
+      } else {
+        setGuestError(res.error || 'Failed to join. Please try again.');
+        soundManager.playWrong();
+      }
+    }
+  };
+
+  // If user is not logged in, show frictionless guest onboarding overlay right in the room!
+  if (!authLoading && !user) {
+    const displayCode = resolvedCode || rawId.replace('room_', '').toUpperCase();
+
+    return (
+      <div className="min-h-screen flex flex-col bg-chalk-bg text-white">
+        <Navbar />
+
+        <main className="flex-1 max-w-md w-full mx-auto px-4 py-8 flex flex-col justify-center">
+          <div className="bg-sketch-paper rounded-[38px] p-6 sm:p-8 border-4 border-slate-900 shadow-sketch-lg text-slate-900 text-center relative overflow-hidden">
+            
+            <div className="inline-block px-4 py-1 rounded-full bg-amber-400 border-2 border-slate-900 font-doodle text-xs font-black uppercase mb-3">
+              Room Invitation 🎨
+            </div>
+
+            <h2 className="text-2xl sm:text-3xl font-black text-slate-950 font-doodle mb-1">
+              Join Room #{displayCode}
+            </h2>
+            <p className="text-xs text-slate-600 mb-5 font-sans">
+              Enter your name or avatar below to jump straight into the game!
+            </p>
+
+            {guestError && (
+              <div className="mb-4 p-2.5 bg-rose-100 border-2 border-rose-400 text-rose-700 rounded-xl text-xs font-bold">
+                {guestError}
+              </div>
+            )}
+
+            <form onSubmit={handleQuickGuestJoin} className="space-y-4 text-left">
+              {/* Avatar Selector */}
+              <div>
+                <label className="block text-xs font-black text-slate-700 uppercase tracking-wide mb-1.5 text-center">
+                  Pick your Avatar:
+                </label>
+                <div className="flex items-center justify-center gap-2 overflow-x-auto pb-1">
+                  {AVATAR_PRESETS.slice(0, 6).map((p) => (
+                    <button
+                      key={p.id}
+                      type="button"
+                      onClick={() => {
+                        setGuestAvatar(p.id);
+                        soundManager.playPop();
+                      }}
+                      className={`p-0.5 rounded-full transition-transform ${
+                        guestAvatar === p.id ? 'ring-3 ring-amber-500 scale-110' : 'opacity-70 hover:opacity-100'
+                      }`}
+                    >
+                      <Avatar id={p.id} size="sm" />
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Name input */}
+              <div>
+                <label className="block text-xs font-black text-slate-700 uppercase tracking-wide mb-1">
+                  Your Nickname:
+                </label>
+                <input
+                  type="text"
+                  value={guestName}
+                  onChange={(e) => setGuestName(e.target.value)}
+                  placeholder="e.g. MasterDrawer"
+                  maxLength={18}
+                  className="w-full px-4 py-3 bg-white border-2 border-slate-300 focus:border-amber-500 rounded-2xl text-sm font-bold text-slate-900 focus:outline-none"
+                />
+              </div>
+
+              <button
+                type="submit"
+                disabled={isJoiningGuest}
+                className="w-full py-3.5 px-6 bg-gradient-to-r from-amber-400 to-yellow-400 hover:from-amber-300 hover:to-yellow-300 text-slate-950 font-black text-lg rounded-2xl border-3 border-slate-900 shadow-sketch-yellow transition-all transform hover:-translate-y-0.5 font-doodle tracking-wider uppercase flex items-center justify-center gap-2"
+              >
+                {isJoiningGuest ? 'Entering Room...' : 'Play Now 🚀'}
+              </button>
+            </form>
+
+            <div className="mt-4 pt-4 border-t border-slate-300 text-xs text-slate-600 flex items-center justify-between">
+              <button
+                type="button"
+                onClick={() => router.push('/')}
+                className="text-slate-500 hover:text-slate-800 font-bold underline"
+              >
+                Back to Home
+              </button>
+              <button
+                type="button"
+                onClick={() => router.push(`/?join=${displayCode}`)}
+                className="text-amber-600 hover:text-amber-700 font-black underline"
+              >
+                Sign in with account →
+              </button>
+            </div>
+          </div>
+        </main>
+      </div>
+    );
+  }
+
   if (authLoading || !user) return null;
 
   if (!roomState) {
+    const displayCode = resolvedCode || rawId.replace('room_', '').toUpperCase();
+
     return (
       <div className="min-h-screen flex flex-col bg-chalk-bg text-white">
         <Navbar />
         <div className="flex-1 flex flex-col items-center justify-center p-4">
           <div className="w-12 h-12 rounded-full border-4 border-amber-400 border-t-transparent animate-spin mb-4" />
           <h2 className="text-xl font-bold font-doodle text-amber-400">
-            Connecting to Picto Buzz room... 🎨
+            Connecting to Room #{displayCode}... 🎨
           </h2>
+          <p className="text-xs text-slate-400 mt-2">
+            Preparing your sketchbook and multiplayer lobby
+          </p>
         </div>
       </div>
     );
@@ -129,6 +320,7 @@ export default function RoomPage() {
   const currentDrawer = roomState.players.find(p => p.id === roomState.currentDrawerId);
   const myPlayer = roomState.players.find(p => p.id === user.id);
   const isReady = myPlayer?.isReady ?? false;
+  const displayCode = roomState.code || resolvedCode || rawId.replace('room_', '').toUpperCase();
 
   // Format timer 00:48
   const formatTimer = (seconds: number) => {
@@ -144,16 +336,21 @@ export default function RoomPage() {
       {/* Main Content Area */}
       <main className="flex-1 max-w-7xl w-full mx-auto p-3 sm:p-5 flex flex-col">
         
-        {/* LOBBY VIEW (Matching Screen 4) */}
+        {/* LOBBY VIEW */}
         {roomState.status === 'lobby' ? (
           <div className="max-w-2xl w-full mx-auto my-auto bg-chalk-card border-3 border-slate-700 rounded-[36px] p-6 sm:p-8 shadow-2xl relative overflow-hidden">
             
-            {/* Top Room Info Header matching Screen 4 */}
+            {/* Top Room Info Header with Prominent Room Code */}
             <div className="flex items-center justify-between border-b border-slate-700 pb-4 mb-6">
               <div>
-                <span className="text-xs font-bold text-amber-400 block font-sans">
-                  Room: {roomState.settings.name}
-                </span>
+                <div className="flex items-center gap-2">
+                  <span className="text-xs font-bold text-amber-400 block font-sans">
+                    Room: {roomState.settings.name}
+                  </span>
+                  <span className="px-2 py-0.5 rounded-md bg-amber-400/20 text-amber-300 font-mono text-xs font-bold">
+                    #{displayCode}
+                  </span>
+                </div>
                 <div className="flex items-center gap-1.5 text-xs text-slate-300 font-bold mt-0.5">
                   <Users className="w-4 h-4 text-sky-400" />
                   <span>Players {roomState.players.length}/{roomState.settings.maxPlayers}</span>
@@ -162,27 +359,62 @@ export default function RoomPage() {
 
               <div className="flex items-center gap-2">
                 <button
-                  onClick={() => setShowShareModal(true)}
-                  className="p-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-amber-400 border border-slate-600 transition-colors"
-                  title="Share Room Link"
+                  onClick={() => {
+                    setShowShareModal(true);
+                    soundManager.playPop();
+                  }}
+                  className="px-3 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-amber-400 border border-slate-600 transition-colors flex items-center gap-1.5 text-xs font-bold"
+                  title="Invite Friends"
                 >
-                  <Share2 className="w-5 h-5" />
+                  <Share2 className="w-4 h-4" />
+                  <span className="hidden sm:inline">Invite</span>
                 </button>
               </div>
             </div>
 
-            {/* Blackboard Doodle Title matching Screen 4 */}
+            {/* Blackboard Doodle Title */}
             <div className="text-center mb-6">
               <h2 className="text-2xl sm:text-3xl font-black text-white font-doodle tracking-wide flex items-center justify-center gap-2">
                 <span>Waiting for players...</span>
                 <span className="text-2xl animate-wiggle">✏️</span>
               </h2>
               <p className="text-xs text-slate-400 mt-1">
-                Share room link with friends or ready up to begin!
+                Share code <span className="font-mono font-bold text-amber-400">#{displayCode}</span> with friends or ready up to begin!
               </p>
             </div>
 
-            {/* Players Avatars Row with Invite Slots matching Screen 4 */}
+            {/* Quick Share Code Ribbon */}
+            <div className="p-3 bg-slate-900/90 rounded-2xl border-2 border-slate-700 flex items-center justify-between gap-3 mb-6">
+              <div className="flex items-center gap-2">
+                <span className="text-xs font-bold text-slate-400">Room Code:</span>
+                <span className="font-mono font-black text-lg text-amber-400 tracking-wider">
+                  {displayCode}
+                </span>
+              </div>
+
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={handleCopyCode}
+                  className="px-3 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-white font-bold text-xs border border-slate-600 flex items-center gap-1"
+                >
+                  {copiedCode ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
+                  <span>{copiedCode ? 'Copied' : 'Copy Code'}</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={handleWhatsAppShare}
+                  className="px-3 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs border border-emerald-500 flex items-center gap-1"
+                  title="Share on WhatsApp"
+                >
+                  <MessageCircle className="w-3.5 h-3.5" />
+                  <span className="hidden sm:inline">WhatsApp</span>
+                </button>
+              </div>
+            </div>
+
+            {/* Players Avatars Row with Invite Slots */}
             <div className="flex items-center justify-center gap-3 sm:gap-4 flex-wrap mb-8">
               {roomState.players.map((player) => (
                 <div key={player.id} className="flex flex-col items-center group">
@@ -209,7 +441,7 @@ export default function RoomPage() {
                 </div>
               ))}
 
-              {/* Empty Invite Slots matching Screen 4 */}
+              {/* Empty Invite Slots */}
               {Array.from({ length: Math.max(0, roomState.settings.maxPlayers - roomState.players.length) })
                 .slice(0, 3)
                 .map((_, i) => (
@@ -228,22 +460,22 @@ export default function RoomPage() {
                 ))}
             </div>
 
-            {/* Game Settings Summary Card matching Screen 4 */}
+            {/* Game Settings Summary Card */}
             <div className="bg-slate-900/80 rounded-2xl border-2 border-slate-800 p-4 mb-6">
               <h4 className="text-xs font-black text-amber-400 uppercase tracking-wider mb-2.5 font-doodle flex items-center gap-1.5">
-                <Sparkles className="w-3.5 h-3.5" /> Game Settings
+                <Sparkles className="w-3.5 h-3.5" /> Game Rules
               </h4>
               <div className="grid grid-cols-3 gap-2 text-xs">
                 <div className="p-2 rounded-xl bg-slate-800/60 border border-slate-700/60">
-                  <span className="text-[10px] text-slate-400 block">Mode</span>
-                  <span className="font-bold text-white">With Friends</span>
+                  <span className="text-[10px] text-slate-400 block">Category</span>
+                  <span className="font-bold text-white truncate block">{roomState.settings.category}</span>
                 </div>
                 <div className="p-2 rounded-xl bg-slate-800/60 border border-slate-700/60">
                   <span className="text-[10px] text-slate-400 block">Rounds</span>
                   <span className="font-bold text-white">{roomState.settings.rounds}</span>
                 </div>
                 <div className="p-2 rounded-xl bg-slate-800/60 border border-slate-700/60">
-                  <span className="text-[10px] text-slate-400 block">Time per turn</span>
+                  <span className="text-[10px] text-slate-400 block">Turn Timer</span>
                   <span className="font-bold text-white">{roomState.settings.drawDuration}s</span>
                 </div>
               </div>
@@ -255,7 +487,7 @@ export default function RoomPage() {
                 <button
                   onClick={() => {
                     soundManager.playPop();
-                    startGame(roomId, user.id);
+                    startGame(resolvedRoomId, user.id);
                   }}
                   className="w-full py-4 px-6 bg-gradient-to-r from-amber-400 to-yellow-400 hover:from-amber-300 hover:to-yellow-300 text-slate-950 font-black text-xl rounded-2xl border-4 border-slate-950 shadow-sketch-yellow transition-all transform hover:-translate-y-0.5 active:translate-y-0.5 font-doodle tracking-wider uppercase flex items-center justify-center gap-2"
                 >
@@ -265,7 +497,7 @@ export default function RoomPage() {
                 <button
                   onClick={() => {
                     soundManager.playPop();
-                    setReady(roomId, user.id, !isReady);
+                    setReady(resolvedRoomId, user.id, !isReady);
                   }}
                   className={`w-full py-3.5 px-6 font-black text-lg rounded-2xl border-3 border-slate-950 shadow-sketch transition-all font-doodle tracking-wider uppercase ${
                     isReady
@@ -279,10 +511,10 @@ export default function RoomPage() {
             </div>
           </div>
         ) : (
-          /* ACTIVE GAMEPLAY VIEW (Screens 5 & 6) */
+          /* ACTIVE GAMEPLAY VIEW */
           <div className="flex flex-col gap-3 flex-1">
             
-            {/* In-Game Header Bar matching Screen 5 */}
+            {/* In-Game Header Bar */}
             <div className="bg-slate-900/90 border-2 border-slate-700 rounded-2xl p-3 px-4 flex items-center justify-between shadow-md">
               
               {/* Current Drawer Badge */}
@@ -321,7 +553,7 @@ export default function RoomPage() {
                 </span>
               </div>
 
-              {/* Animated Red Countdown Timer matching Screen 5 */}
+              {/* Animated Countdown Timer */}
               <div className="flex items-center gap-2">
                 <div
                   className={`px-3 py-1.5 rounded-full font-black text-sm sm:text-base font-mono flex items-center gap-1.5 border-2 ${
@@ -336,13 +568,13 @@ export default function RoomPage() {
               </div>
             </div>
 
-            {/* Private 3-Word Selection Phase for Drawer (CRITICAL FEATURE) */}
+            {/* Word Selection Phase for Drawer */}
             {roomState.status === 'selecting_word' && (
               isCurrentDrawer ? (
                 <WordSelector
                   words={privateWordChoices}
                   duration={15}
-                  onSelectWord={(word) => selectWord(roomId, user.id, word)}
+                  onSelectWord={(word) => selectWord(resolvedRoomId, user.id, word)}
                 />
               ) : (
                 <div className="w-full bg-slate-900/90 border-2 border-dashed border-sky-400/60 rounded-3xl p-6 text-center shadow-lg animate-pulse mb-3">
@@ -380,32 +612,31 @@ export default function RoomPage() {
             {/* Main Stage Grid (Canvas + Guessing + Live Leaderboard) */}
             <div className="grid grid-cols-1 lg:grid-cols-12 gap-3 flex-1 items-start">
               
-              {/* Left & Center: Canvas & Guesses (8 cols on desktop) */}
+              {/* Left & Center: Canvas & Guesses */}
               <div className={`lg:col-span-8 flex flex-col gap-3 ${activeTabMobile === 'leaderboard' ? 'hidden lg:flex' : 'flex'}`}>
-                {/* Canvas */}
                 <DrawingCanvas
                   isDrawer={isCurrentDrawer && roomState.status === 'drawing'}
                   incomingStrokes={roomState.drawingHistory}
-                  onStrokeComplete={(stroke) => sendStroke(roomId, user.id, stroke)}
-                  onClear={() => clearCanvas(roomId, user.id)}
-                  onUndo={() => undoCanvas(roomId, user.id)}
+                  onStrokeComplete={(stroke) => sendStroke(resolvedRoomId, user.id, stroke)}
+                  onClear={() => clearCanvas(resolvedRoomId, user.id)}
+                  onUndo={() => undoCanvas(resolvedRoomId, user.id)}
                   disabled={roomState.status !== 'drawing'}
                 />
 
-                {/* Guessing Panel below canvas */}
+                {/* Guessing Panel */}
                 <div className="w-full h-64">
                   <GuessingPanel
                     guesses={roomState.guesses}
                     isDrawer={isCurrentDrawer}
                     hasGuessedCorrectly={myPlayer?.hasGuessedCorrectly ?? false}
                     closeHint={closeGuessHint}
-                    onSendGuess={(text) => submitGuess(roomId, user.id, text)}
+                    onSendGuess={(text) => submitGuess(resolvedRoomId, user.id, text)}
                     disabled={roomState.status !== 'drawing'}
                   />
                 </div>
               </div>
 
-              {/* Right Side: In-Room Live Leaderboard (4 cols on desktop) matching Screen 6 */}
+              {/* Right Side: In-Room Live Leaderboard */}
               <div className={`lg:col-span-4 h-[580px] ${activeTabMobile === 'canvas' ? 'hidden lg:block' : 'block'}`}>
                 <InRoomLeaderboard
                   players={roomState.players}
@@ -416,7 +647,7 @@ export default function RoomPage() {
           </div>
         )}
 
-        {/* Round Over Modal (Screen 7) */}
+        {/* Round Over Modal */}
         {roundEndedPayload && (
           <RoundOverModal
             word={roundEndedPayload.word}
@@ -435,7 +666,7 @@ export default function RoomPage() {
             totalRounds={gameOverPayload.totalRounds}
             onPlayAgain={() => {
               clearCelebrations();
-              if (isHost) startGame(roomId, user.id);
+              if (isHost) startGame(resolvedRoomId, user.id);
             }}
           />
         )}
@@ -448,28 +679,56 @@ export default function RoomPage() {
                 Invite Friends 🎨
               </h3>
               <p className="text-xs text-slate-600 mb-4 font-sans">
-                Share this link or room code with anyone to play together!
+                Share the 5-letter code or invite link to play together!
               </p>
 
-              <div className="p-3 bg-white rounded-2xl border-2 border-slate-300 font-mono text-xs font-bold text-slate-800 break-all mb-4 select-all">
-                {typeof window !== 'undefined' ? `${window.location.origin}/room/${roomId}` : roomId}
+              {/* Huge Code Display */}
+              <div className="p-4 bg-amber-100 rounded-2xl border-2 border-amber-400 mb-4 flex items-center justify-between">
+                <div className="text-left">
+                  <span className="text-[10px] font-black text-amber-800 uppercase block">Room Code</span>
+                  <span className="text-2xl font-mono font-black text-slate-950 tracking-wider">
+                    {displayCode}
+                  </span>
+                </div>
+                <button
+                  type="button"
+                  onClick={handleCopyCode}
+                  className="px-3.5 py-2 bg-amber-400 hover:bg-amber-300 text-slate-950 font-black text-xs rounded-xl border-2 border-slate-900 shadow-sm flex items-center gap-1 font-doodle uppercase"
+                >
+                  {copiedCode ? <Check className="w-4 h-4 text-emerald-700" /> : <Copy className="w-4 h-4" />}
+                  <span>{copiedCode ? 'Copied' : 'Copy Code'}</span>
+                </button>
               </div>
 
-              <div className="flex gap-2">
+              {/* Full URL box */}
+              <div className="p-3 bg-white rounded-2xl border-2 border-slate-300 font-mono text-xs font-bold text-slate-800 break-all mb-4 select-all">
+                {getShareLink()}
+              </div>
+
+              {/* Share actions */}
+              <div className="grid grid-cols-2 gap-2 mb-3">
                 <button
-                  onClick={handleCopyLink}
-                  className="flex-1 py-3 bg-amber-400 hover:bg-amber-300 text-slate-950 font-black text-sm rounded-2xl border-2 border-slate-900 shadow-sketch-sm flex items-center justify-center gap-2 font-doodle uppercase"
+                  type="button"
+                  onClick={handleWhatsAppShare}
+                  className="py-2.5 px-3 bg-emerald-600 hover:bg-emerald-500 text-white font-black text-xs rounded-xl border-2 border-slate-900 flex items-center justify-center gap-1.5 font-doodle"
                 >
-                  {copied ? <Check className="w-4 h-4" /> : <Copy className="w-4 h-4" />}
-                  {copied ? 'Copied Link!' : 'Copy Link'}
+                  <MessageCircle className="w-4 h-4" /> Share WhatsApp
                 </button>
                 <button
-                  onClick={() => setShowShareModal(false)}
-                  className="px-5 py-3 bg-slate-200 hover:bg-slate-300 text-slate-800 font-bold text-sm rounded-2xl border border-slate-400"
+                  type="button"
+                  onClick={handleNativeShare}
+                  className="py-2.5 px-3 bg-sky-500 hover:bg-sky-400 text-white font-black text-xs rounded-xl border-2 border-slate-900 flex items-center justify-center gap-1.5 font-doodle"
                 >
-                  Close
+                  <Share2 className="w-4 h-4" /> Share Link
                 </button>
               </div>
+
+              <button
+                onClick={() => setShowShareModal(false)}
+                className="w-full py-2.5 bg-slate-200 hover:bg-slate-300 text-slate-800 font-bold text-xs rounded-xl border border-slate-400"
+              >
+                Close
+              </button>
             </div>
           </div>
         )}
