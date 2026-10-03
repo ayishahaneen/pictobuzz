@@ -124,7 +124,12 @@ class DatabaseService {
         const raw = fs.readFileSync(DB_FILE, 'utf-8');
         this.data = JSON.parse(raw);
       } else {
-        this.seedInitialUsers();
+        this.data = {
+          users: {},
+          usernameToId: {},
+          emailToId: {},
+          resetTokens: {}
+        };
         this.save();
       }
       this.isLoaded = true;
@@ -136,7 +141,6 @@ class DatabaseService {
         emailToId: {},
         resetTokens: {}
       };
-      this.seedInitialUsers();
     }
   }
 
@@ -149,84 +153,6 @@ class DatabaseService {
     } catch (e) {
       console.error('Error saving database:', e);
     }
-  }
-
-  private seedInitialUsers() {
-    // Seed default demo user 'Danish' and others matching the screenshot
-    const salt = bcrypt.genSaltSync(10);
-    const hash = bcrypt.hashSync('pictionary123', salt);
-
-    const danishUser: UserRecord = {
-      id: 'usr_danish_101',
-      username: 'Danish',
-      email: 'danish@pictobuzz.com',
-      passwordHash: hash,
-      avatar: 'avatar_1',
-      totalScore: 320,
-      gamesPlayed: 14,
-      gamesWon: 9,
-      correctGuesses: 42,
-      longestStreak: 6,
-      personalBest: 480,
-      createdAt: new Date().toISOString(),
-      matchHistory: [
-        {
-          roomId: 'room_7F3K9',
-          roomName: "Danish's Room",
-          mode: 'friends',
-          date: new Date(Date.now() - 3600000).toISOString(),
-          rank: 1,
-          totalPlayers: 4,
-          score: 320,
-          wordGuessedCount: 4,
-          isWinner: true
-        }
-      ]
-    };
-
-    const ayaanUser: UserRecord = {
-      id: 'usr_ayaan_102',
-      username: 'Ayaan',
-      email: 'ayaan@pictobuzz.com',
-      passwordHash: hash,
-      avatar: 'avatar_2',
-      totalScore: 280,
-      gamesPlayed: 12,
-      gamesWon: 5,
-      correctGuesses: 35,
-      longestStreak: 4,
-      personalBest: 410,
-      createdAt: new Date().toISOString(),
-      matchHistory: []
-    };
-
-    const zaraUser: UserRecord = {
-      id: 'usr_zara_103',
-      username: 'Zara',
-      email: 'zara@pictobuzz.com',
-      passwordHash: hash,
-      avatar: 'avatar_3',
-      totalScore: 210,
-      gamesPlayed: 9,
-      gamesWon: 3,
-      correctGuesses: 26,
-      longestStreak: 3,
-      personalBest: 360,
-      createdAt: new Date().toISOString(),
-      matchHistory: []
-    };
-
-    this.data.users[danishUser.id] = danishUser;
-    this.data.usernameToId[danishUser.username.toLowerCase()] = danishUser.id;
-    this.data.emailToId[danishUser.email.toLowerCase()] = danishUser.id;
-
-    this.data.users[ayaanUser.id] = ayaanUser;
-    this.data.usernameToId[ayaanUser.username.toLowerCase()] = ayaanUser.id;
-    this.data.emailToId[ayaanUser.email.toLowerCase()] = ayaanUser.id;
-
-    this.data.users[zaraUser.id] = zaraUser;
-    this.data.usernameToId[zaraUser.username.toLowerCase()] = zaraUser.id;
-    this.data.emailToId[zaraUser.email.toLowerCase()] = zaraUser.id;
   }
 
   // User methods

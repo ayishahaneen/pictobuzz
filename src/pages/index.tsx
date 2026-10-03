@@ -4,22 +4,33 @@ import { useAuth } from '@/context/AuthContext';
 import { Avatar, AVATAR_PRESETS } from '@/components/Avatar';
 import { DoodlePencil } from '@/components/PaintDoodles';
 import { soundManager } from '@/lib/audio';
-import { User, Lock, Mail, Eye, EyeOff, Sparkles, ArrowRight, Play, CheckCircle } from 'lucide-react';
+import { User, Lock, Mail, Eye, EyeOff, Play, CheckCircle2, AlertCircle } from 'lucide-react';
 
 export default function WelcomePage() {
   const router = useRouter();
   const { user, login, register, playAsGuest, isLoading } = useAuth();
 
   const [isLoginTab, setIsLoginTab] = useState(true);
-  const [identifier, setIdentifier] = useState('');
-  const [password, setPassword] = useState('');
-  const [confirmPassword, setConfirmPassword] = useState('');
-  const [username, setUsername] = useState('');
-  const [email, setEmail] = useState('');
+
+  // Login form state
+  const [loginIdentifier, setLoginIdentifier] = useState('');
+  const [loginPassword, setLoginPassword] = useState('');
+  const [showLoginPassword, setShowLoginPassword] = useState(false);
+
+  // Register form state
+  const [registerUsername, setRegisterUsername] = useState('');
+  const [registerEmail, setRegisterEmail] = useState('');
+  const [registerPassword, setRegisterPassword] = useState('');
+  const [registerConfirmPassword, setRegisterConfirmPassword] = useState('');
+  const [showRegisterPassword, setShowRegisterPassword] = useState(false);
+  const [showRegisterConfirmPassword, setShowRegisterConfirmPassword] = useState(false);
   const [selectedAvatar, setSelectedAvatar] = useState('avatar_1');
-  const [showPassword, setShowPassword] = useState(false);
+
   const [errorMessage, setErrorMessage] = useState('');
+  const [successMessage, setSuccessMessage] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
+
+  // Forgot password state
   const [showForgotModal, setShowForgotModal] = useState(false);
   const [forgotEmail, setForgotEmail] = useState('');
   const [forgotStatus, setForgotStatus] = useState('');
@@ -33,21 +44,26 @@ export default function WelcomePage() {
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     setErrorMessage('');
-    if (!identifier || !password) {
+    setSuccessMessage('');
+
+    const cleanIdentifier = loginIdentifier.trim();
+    const cleanPassword = loginPassword;
+
+    if (!cleanIdentifier || !cleanPassword) {
       setErrorMessage('Please enter your username/email and password.');
       soundManager.playWrong();
       return;
     }
 
     setIsSubmitting(true);
-    const result = await login(identifier, password);
+    const result = await login(cleanIdentifier, cleanPassword);
     setIsSubmitting(false);
 
     if (result.success) {
       soundManager.playCorrect();
       router.push('/dashboard');
     } else {
-      setErrorMessage(result.error || 'Invalid credentials');
+      setErrorMessage(result.error || 'Invalid username/email or password.');
       soundManager.playWrong();
     }
   };
@@ -55,32 +71,48 @@ export default function WelcomePage() {
   const handleRegister = async (e: React.FormEvent) => {
     e.preventDefault();
     setErrorMessage('');
+    setSuccessMessage('');
 
-    if (!username || !email || !password) {
+    const cleanUsername = registerUsername.trim();
+    const cleanEmail = registerEmail.trim().toLowerCase();
+    const cleanPassword = registerPassword;
+    const cleanConfirm = registerConfirmPassword;
+
+    if (!cleanUsername || !cleanEmail || !cleanPassword || !cleanConfirm) {
       setErrorMessage('Please fill in all fields.');
       soundManager.playWrong();
       return;
     }
-    if (password.length < 6) {
+
+    // Basic email format validation
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(cleanEmail)) {
+      setErrorMessage('Please enter a valid email address.');
+      soundManager.playWrong();
+      return;
+    }
+
+    if (cleanPassword.length < 6) {
       setErrorMessage('Password must be at least 6 characters long.');
       soundManager.playWrong();
       return;
     }
-    if (password !== confirmPassword) {
-      setErrorMessage('Passwords do not match.');
+
+    if (cleanPassword !== cleanConfirm) {
+      setErrorMessage('Passwords do not match. Please ensure both password fields are identical.');
       soundManager.playWrong();
       return;
     }
 
     setIsSubmitting(true);
-    const result = await register(username, email, password, selectedAvatar);
+    const result = await register(cleanUsername, cleanEmail, cleanPassword, selectedAvatar);
     setIsSubmitting(false);
 
     if (result.success) {
       soundManager.playCorrect();
       router.push('/dashboard');
     } else {
-      setErrorMessage(result.error || 'Registration failed');
+      setErrorMessage(result.error || 'Registration failed. Please try again.');
       soundManager.playWrong();
     }
   };
@@ -96,28 +128,26 @@ export default function WelcomePage() {
     }
   };
 
-  const fillDemoAccount = () => {
-    setIdentifier('Danish');
-    setPassword('pictionary123');
-    soundManager.playPop();
-  };
-
   const handleForgotPassword = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!forgotEmail) return;
+    const cleanEmail = forgotEmail.trim();
+    if (!cleanEmail) return;
+
     try {
       const res = await fetch('/api/auth/forgot-password', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email: forgotEmail })
+        body: JSON.stringify({ email: cleanEmail })
       });
       const data = await res.json();
-      setForgotStatus('Password reset link generated! Demo link: use pictionary123 to login.');
+      setForgotStatus(data.message || 'If an account exists, a reset link has been sent to your email.');
       soundManager.playPop();
     } catch {
-      setForgotStatus('Error generating reset link.');
+      setForgotStatus('Unable to process password reset at this time.');
     }
   };
+
+  const passwordsMatch = registerPassword && registerConfirmPassword && registerPassword === registerConfirmPassword;
 
   return (
     <div className="min-h-screen flex items-center justify-center p-4 py-8 relative">
@@ -153,6 +183,7 @@ export default function WelcomePage() {
             onClick={() => {
               setIsLoginTab(true);
               setErrorMessage('');
+              setSuccessMessage('');
               soundManager.playPop();
             }}
             className={`flex-1 pb-2.5 font-black text-base transition-all font-doodle ${
@@ -168,6 +199,7 @@ export default function WelcomePage() {
             onClick={() => {
               setIsLoginTab(false);
               setErrorMessage('');
+              setSuccessMessage('');
               soundManager.playPop();
             }}
             className={`flex-1 pb-2.5 font-black text-base transition-all font-doodle ${
@@ -180,10 +212,18 @@ export default function WelcomePage() {
           </button>
         </div>
 
-        {/* Error Alert */}
+        {/* Error / Success Alert */}
         {errorMessage && (
-          <div className="mb-4 p-3 bg-rose-100 border-2 border-rose-400 text-rose-700 rounded-2xl text-xs font-bold text-center animate-wiggle">
-            {errorMessage}
+          <div className="mb-4 p-3 bg-rose-100 border-2 border-rose-400 text-rose-700 rounded-2xl text-xs font-bold text-center flex items-center justify-center gap-1.5 animate-wiggle">
+            <AlertCircle className="w-4 h-4 flex-shrink-0" />
+            <span>{errorMessage}</span>
+          </div>
+        )}
+
+        {successMessage && (
+          <div className="mb-4 p-3 bg-emerald-100 border-2 border-emerald-400 text-emerald-700 rounded-2xl text-xs font-bold text-center flex items-center justify-center gap-1.5">
+            <CheckCircle2 className="w-4 h-4 flex-shrink-0" />
+            <span>{successMessage}</span>
           </div>
         )}
 
@@ -197,9 +237,11 @@ export default function WelcomePage() {
               </div>
               <input
                 type="text"
-                value={identifier}
-                onChange={(e) => setIdentifier(e.target.value)}
+                value={loginIdentifier}
+                onChange={(e) => setLoginIdentifier(e.target.value)}
                 placeholder="Username or Email"
+                required
+                autoComplete="username"
                 className="w-full pl-11 pr-4 py-3 bg-white border-2 border-slate-300 focus:border-amber-500 rounded-2xl text-sm font-bold text-slate-900 placeholder:text-slate-400 focus:outline-none transition-all shadow-inner"
               />
             </div>
@@ -210,18 +252,21 @@ export default function WelcomePage() {
                 <Lock className="w-5 h-5" />
               </div>
               <input
-                type={showPassword ? 'text' : 'password'}
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
+                type={showLoginPassword ? 'text' : 'password'}
+                value={loginPassword}
+                onChange={(e) => setLoginPassword(e.target.value)}
                 placeholder="Password"
+                required
+                autoComplete="current-password"
                 className="w-full pl-11 pr-11 py-3 bg-white border-2 border-slate-300 focus:border-amber-500 rounded-2xl text-sm font-bold text-slate-900 placeholder:text-slate-400 focus:outline-none transition-all shadow-inner"
               />
               <button
                 type="button"
-                onClick={() => setShowPassword(!showPassword)}
+                onClick={() => setShowLoginPassword(!showLoginPassword)}
                 className="absolute inset-y-0 right-0 pr-3.5 flex items-center text-slate-400 hover:text-slate-600"
+                tabIndex={-1}
               >
-                {showPassword ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
+                {showLoginPassword ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
               </button>
             </div>
 
@@ -234,16 +279,8 @@ export default function WelcomePage() {
               {isSubmitting ? 'Logging in...' : 'Login'}
             </button>
 
-            {/* Quick Demo Fill & Forgot Password */}
-            <div className="flex items-center justify-between text-xs font-bold pt-1">
-              <button
-                type="button"
-                onClick={fillDemoAccount}
-                className="text-amber-600 hover:text-amber-700 underline flex items-center gap-1"
-              >
-                <Sparkles className="w-3.5 h-3.5" /> Demo Login (Danish)
-              </button>
-
+            {/* Forgot Password Link */}
+            <div className="flex items-center justify-end text-xs font-bold pt-1">
               <button
                 type="button"
                 onClick={() => {
@@ -290,9 +327,11 @@ export default function WelcomePage() {
               </div>
               <input
                 type="text"
-                value={username}
-                onChange={(e) => setUsername(e.target.value)}
+                value={registerUsername}
+                onChange={(e) => setRegisterUsername(e.target.value)}
                 placeholder="Choose Username"
+                required
+                autoComplete="username"
                 className="w-full pl-10 pr-4 py-2.5 bg-white border-2 border-slate-300 focus:border-amber-500 rounded-2xl text-xs font-bold text-slate-900 placeholder:text-slate-400 focus:outline-none"
               />
             </div>
@@ -304,9 +343,11 @@ export default function WelcomePage() {
               </div>
               <input
                 type="email"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
+                value={registerEmail}
+                onChange={(e) => setRegisterEmail(e.target.value)}
                 placeholder="Email Address"
+                required
+                autoComplete="email"
                 className="w-full pl-10 pr-4 py-2.5 bg-white border-2 border-slate-300 focus:border-amber-500 rounded-2xl text-xs font-bold text-slate-900 placeholder:text-slate-400 focus:outline-none"
               />
             </div>
@@ -317,27 +358,60 @@ export default function WelcomePage() {
                 <Lock className="w-4 h-4" />
               </div>
               <input
-                type={showPassword ? 'text' : 'password'}
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
+                type={showRegisterPassword ? 'text' : 'password'}
+                value={registerPassword}
+                onChange={(e) => setRegisterPassword(e.target.value)}
                 placeholder="Password (min 6 characters)"
+                required
+                autoComplete="new-password"
                 className="w-full pl-10 pr-10 py-2.5 bg-white border-2 border-slate-300 focus:border-amber-500 rounded-2xl text-xs font-bold text-slate-900 placeholder:text-slate-400 focus:outline-none"
               />
+              <button
+                type="button"
+                onClick={() => setShowRegisterPassword(!showRegisterPassword)}
+                className="absolute inset-y-0 right-0 pr-3 flex items-center text-slate-400 hover:text-slate-600"
+                tabIndex={-1}
+              >
+                {showRegisterPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+              </button>
             </div>
 
             {/* Confirm Password */}
             <div className="relative">
               <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-slate-400">
-                <CheckCircle className="w-4 h-4" />
+                <Lock className="w-4 h-4" />
               </div>
               <input
-                type={showPassword ? 'text' : 'password'}
-                value={confirmPassword}
-                onChange={(e) => setConfirmPassword(e.target.value)}
+                type={showRegisterConfirmPassword ? 'text' : 'password'}
+                value={registerConfirmPassword}
+                onChange={(e) => setRegisterConfirmPassword(e.target.value)}
                 placeholder="Confirm Password"
-                className="w-full pl-10 pr-4 py-2.5 bg-white border-2 border-slate-300 focus:border-amber-500 rounded-2xl text-xs font-bold text-slate-900 placeholder:text-slate-400 focus:outline-none"
+                required
+                autoComplete="new-password"
+                className={`w-full pl-10 pr-10 py-2.5 bg-white border-2 rounded-2xl text-xs font-bold text-slate-900 placeholder:text-slate-400 focus:outline-none ${
+                  registerConfirmPassword && !passwordsMatch
+                    ? 'border-rose-400 focus:border-rose-500'
+                    : registerConfirmPassword && passwordsMatch
+                    ? 'border-emerald-500 focus:border-emerald-600'
+                    : 'border-slate-300 focus:border-amber-500'
+                }`}
               />
+              <button
+                type="button"
+                onClick={() => setShowRegisterConfirmPassword(!showRegisterConfirmPassword)}
+                className="absolute inset-y-0 right-0 pr-3 flex items-center text-slate-400 hover:text-slate-600"
+                tabIndex={-1}
+              >
+                {showRegisterConfirmPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+              </button>
             </div>
+
+            {/* Passwords match helper */}
+            {registerConfirmPassword && (
+              <div className={`text-[11px] font-bold text-right -mt-2 ${passwordsMatch ? 'text-emerald-600' : 'text-rose-500'}`}>
+                {passwordsMatch ? '✓ Passwords match' : '✗ Passwords do not match'}
+              </div>
+            )}
 
             {/* Create Account Button */}
             <button
@@ -378,6 +452,8 @@ export default function WelcomePage() {
                 type="button"
                 onClick={() => {
                   setIsLoginTab(false);
+                  setErrorMessage('');
+                  setSuccessMessage('');
                   soundManager.playPop();
                 }}
                 className="text-sky-600 hover:text-sky-700 underline font-black"
@@ -392,6 +468,8 @@ export default function WelcomePage() {
                 type="button"
                 onClick={() => {
                   setIsLoginTab(true);
+                  setErrorMessage('');
+                  setSuccessMessage('');
                   soundManager.playPop();
                 }}
                 className="text-amber-600 hover:text-amber-700 underline font-black"
