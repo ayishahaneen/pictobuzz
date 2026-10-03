@@ -26,34 +26,4 @@ A complete, full-stack real-time drawing and guessing party web application insp
 
 ---
 
-## 🚀 Getting Started
 
-### 1. Install Dependencies
-```bash
-npm install
-```
-
-### 2. Run the Development Server
-```bash
-npm run dev
-```
-
-Open [http://localhost:3000](http://localhost:3000) in your browser.
-
-### 3. Build for Production
-```bash
-npm run build
-npm start
-```
-
----
-
-## 🎮 Demo Credentials
-* **Username**: `Danish`
-* **Password**: `pictionary123`
-*(Or click "Demo Login" or "Play as Guest" on the welcome screen)*
-
----
-
-## 📜 License
-MIT License
