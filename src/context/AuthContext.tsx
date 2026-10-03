@@ -39,6 +39,19 @@ interface AuthContextType {
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
+async function parseJsonResponse(res: Response): Promise<{ data: any; isJson: boolean }> {
+  const contentType = res.headers.get('content-type') || '';
+  if (contentType.includes('application/json')) {
+    try {
+      const data = await res.json();
+      return { data, isJson: true };
+    } catch {
+      return { data: null, isJson: false };
+    }
+  }
+  return { data: null, isJson: false };
+}
+
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [user, setUser] = useState<User | null>(null);
   const [token, setToken] = useState<string | null>(null);
@@ -56,9 +69,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         fetch('/api/auth/me', {
           headers: { Authorization: `Bearer ${savedToken}` }
         })
-          .then(res => res.json())
-          .then(data => {
-            if (data.user) {
+          .then(async (res) => {
+            const { data } = await parseJsonResponse(res);
+            if (data?.user) {
               setUser(data.user);
               localStorage.setItem('picto_buzz_user', JSON.stringify(data.user));
             }
@@ -79,9 +92,12 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ identifier, password })
       });
-      const data = await res.json();
-      if (!res.ok) {
-        return { success: false, error: data.error || 'Login failed' };
+      const { data, isJson } = await parseJsonResponse(res);
+      if (!res.ok || !data) {
+        return {
+          success: false,
+          error: data?.error || (res.status === 401 ? 'Invalid username/email or password' : 'Login failed. Please check your credentials.')
+        };
       }
       setUser(data.user);
       setToken(data.token);
@@ -89,7 +105,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       localStorage.setItem('picto_buzz_user', JSON.stringify(data.user));
       return { success: true };
     } catch (e: any) {
-      return { success: false, error: e.message || 'Network error' };
+      return { success: false, error: e.message || 'Network error occurred' };
     }
   };
 
@@ -100,9 +116,12 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ username, email, password, avatar })
       });
-      const data = await res.json();
-      if (!res.ok) {
-        return { success: false, error: data.error || 'Registration failed' };
+      const { data } = await parseJsonResponse(res);
+      if (!res.ok || !data) {
+        return {
+          success: false,
+          error: data?.error || 'Registration failed. Please try again.'
+        };
       }
       setUser(data.user);
       setToken(data.token);
@@ -110,7 +129,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       localStorage.setItem('picto_buzz_user', JSON.stringify(data.user));
       return { success: true };
     } catch (e: any) {
-      return { success: false, error: e.message || 'Network error' };
+      return { success: false, error: e.message || 'Network error occurred' };
     }
   };
 
@@ -119,9 +138,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       const res = await fetch('/api/auth/guest', {
         method: 'POST'
       });
-      const data = await res.json();
-      if (!res.ok) {
-        return { success: false, error: data.error || 'Failed to create guest user' };
+      const { data } = await parseJsonResponse(res);
+      if (!res.ok || !data) {
+        return { success: false, error: data?.error || 'Failed to create guest user' };
       }
       setUser(data.user);
       setToken(data.token);
@@ -129,7 +148,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       localStorage.setItem('picto_buzz_user', JSON.stringify(data.user));
       return { success: true };
     } catch (e: any) {
-      return { success: false, error: e.message || 'Network error' };
+      return { success: false, error: e.message || 'Network error occurred' };
     }
   };
 
@@ -151,15 +170,15 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         },
         body: JSON.stringify(updates)
       });
-      const data = await res.json();
-      if (!res.ok) {
-        return { success: false, error: data.error || 'Update failed' };
+      const { data } = await parseJsonResponse(res);
+      if (!res.ok || !data) {
+        return { success: false, error: data?.error || 'Update failed' };
       }
       setUser(data.user);
       localStorage.setItem('picto_buzz_user', JSON.stringify(data.user));
       return { success: true };
     } catch (e: any) {
-      return { success: false, error: e.message || 'Network error' };
+      return { success: false, error: e.message || 'Network error occurred' };
     }
   };
 
@@ -169,8 +188,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       const res = await fetch('/api/auth/me', {
         headers: { Authorization: `Bearer ${token}` }
       });
-      const data = await res.json();
-      if (data.user) {
+      const { data } = await parseJsonResponse(res);
+      if (data?.user) {
         setUser(data.user);
         localStorage.setItem('picto_buzz_user', JSON.stringify(data.user));
       }

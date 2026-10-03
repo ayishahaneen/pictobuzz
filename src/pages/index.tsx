@@ -139,8 +139,12 @@ export default function WelcomePage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email: cleanEmail })
       });
-      const data = await res.json();
-      setForgotStatus(data.message || 'If an account exists, a reset link has been sent to your email.');
+      if (res.headers.get('content-type')?.includes('application/json')) {
+        const data = await res.json();
+        setForgotStatus(data.message || 'If an account exists, a reset link has been sent to your email.');
+      } else {
+        setForgotStatus('If an account exists, a reset link has been sent to your email.');
+      }
       soundManager.playPop();
     } catch {
       setForgotStatus('Unable to process password reset at this time.');

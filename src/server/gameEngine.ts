@@ -2,13 +2,20 @@ import { Server as SocketIOServer, Socket } from 'socket.io';
 import { getWordChoices } from '../lib/wordBank';
 import { db, PlayerState, RoomRecord, RoomSettings, DrawStroke, GuessMessage } from './db';
 
+const globalRooms: Map<string, RoomRecord> = (global as any).__PICTO_ROOMS__ || new Map();
+(global as any).__PICTO_ROOMS__ = globalRooms;
+
 export class GameEngine {
-  private io: SocketIOServer;
-  private rooms: Map<string, RoomRecord> = new Map();
+  private io?: SocketIOServer;
+  private rooms: Map<string, RoomRecord> = globalRooms;
   private timers: Map<string, NodeJS.Timeout> = new Map();
   private selectionTimers: Map<string, NodeJS.Timeout> = new Map();
 
-  constructor(io: SocketIOServer) {
+  constructor(io?: SocketIOServer) {
+    this.io = io;
+  }
+
+  public setIO(io: SocketIOServer) {
     this.io = io;
   }
 
@@ -215,7 +222,7 @@ export class GameEngine {
     room.secretChoices = choices;
 
     // Send private 3-word choices ONLY to the drawer socket
-    if (drawer.socketId) {
+    if (drawer.socketId && this.io) {
       this.io.to(drawer.socketId).emit('room:private_word_choices', {
         choices,
         duration: 15 // 15 seconds to choose
@@ -261,7 +268,7 @@ export class GameEngine {
     const drawer = room.players.find(p => p.id === drawerId);
 
     // Send private selected word confirmation to the drawer
-    if (drawer && drawer.socketId) {
+    if (drawer && drawer.socketId && this.io) {
       this.io.to(drawer.socketId).emit('room:private_drawer_word', {
         word: room.selectedWord
       });
@@ -288,7 +295,7 @@ export class GameEngine {
 
     room.drawingHistory.push(stroke);
     // Broadcast stroke to all guessers
-    this.io.to(roomId).emit('draw:stroke', stroke);
+    this.io?.to(roomId).emit('draw:stroke', stroke);
     return true;
   }
 
@@ -299,7 +306,7 @@ export class GameEngine {
     }
 
     room.drawingHistory = [];
-    this.io.to(roomId).emit('draw:clear');
+    this.io?.to(roomId).emit('draw:clear');
     return true;
   }
 
@@ -311,7 +318,7 @@ export class GameEngine {
 
     if (room.drawingHistory.length > 0) {
       room.drawingHistory.pop();
-      this.io.to(roomId).emit('draw:history_sync', { history: room.drawingHistory });
+      this.io?.to(roomId).emit('draw:history_sync', { history: room.drawingHistory });
       return true;
     }
     return false;
@@ -367,10 +374,10 @@ export class GameEngine {
       room.guesses.push(guessMsg);
 
       // Notify room of correct guess
-      this.io.to(roomId).emit('game:guess_message', guessMsg);
+      this.io?.to(roomId).emit('game:guess_message', guessMsg);
 
       // Send private score celebration to the lucky guesser
-      if (player.socketId) {
+      if (player.socketId && this.io) {
         this.io.to(player.socketId).emit('game:you_guessed_correctly', {
           points,
           word: room.selectedWord
@@ -392,7 +399,7 @@ export class GameEngine {
 
     // Check close guess (Levenshtein distance <= 1)
     if (this.isCloseMatch(normalizedGuess, normalizedAnswer)) {
-      if (player.socketId) {
+      if (player.socketId && this.io) {
         this.io.to(player.socketId).emit('game:close_guess_hint', {
           guess: text,
           message: "You're super close! 🤏"
@@ -412,7 +419,7 @@ export class GameEngine {
       timestamp: Date.now()
     };
     room.guesses.push(wrongMsg);
-    this.io.to(roomId).emit('game:guess_message', wrongMsg);
+    this.io?.to(roomId).emit('game:guess_message', wrongMsg);
     return { status: 'wrong' };
   }
 
@@ -435,7 +442,7 @@ export class GameEngine {
     }
 
     // Public round over payload with word reveal
-    this.io.to(room.id).emit('room:round_ended', {
+    this.io?.to(room.id).emit('room:round_ended', {
       word: room.selectedWord,
       drawerId: room.currentDrawerId,
       drawerName: drawer?.username || 'Drawer',
@@ -493,7 +500,7 @@ export class GameEngine {
       });
     });
 
-    this.io.to(room.id).emit('room:game_over', {
+    this.io?.to(room.id).emit('room:game_over', {
       winners,
       rankings: sorted,
       totalRounds: room.settings.rounds
@@ -544,7 +551,7 @@ export class GameEngine {
       drawingHistory: room.drawingHistory
     };
 
-    this.io.to(room.id).emit('room:state_update', sanitizedRoom);
+    this.io?.to(room.id).emit('room:state_update', sanitizedRoom);
   }
 
   private addSystemMessage(room: RoomRecord, text: string) {
@@ -558,7 +565,7 @@ export class GameEngine {
       timestamp: Date.now()
     };
     room.guesses.push(sysMsg);
-    this.io.to(room.id).emit('game:guess_message', sysMsg);
+    this.io?.to(room.id).emit('game:guess_message', sysMsg);
   }
 
   private clearRoomTimers(roomId: string) {
@@ -598,3 +605,6 @@ export class GameEngine {
     return track[answer.length][guess.length] === 1;
   }
 }
+
+export const defaultGameEngine = new GameEngine();
+

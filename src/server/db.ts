@@ -99,8 +99,22 @@ interface DatabaseSchema {
   resetTokens: Record<string, { userId: string; expiresAt: number }>;
 }
 
-const DATA_DIR = path.join(process.cwd(), 'data');
-const DB_FILE = path.join(DATA_DIR, 'picto_buzz_db.json');
+function getDatabaseFilePath(): string {
+  try {
+    const defaultDataDir = path.join(process.cwd(), 'data');
+    if (!fs.existsSync(defaultDataDir)) {
+      fs.mkdirSync(defaultDataDir, { recursive: true });
+    }
+    const testFile = path.join(defaultDataDir, '.test');
+    fs.writeFileSync(testFile, 'ok');
+    fs.unlinkSync(testFile);
+    return path.join(defaultDataDir, 'picto_buzz_db.json');
+  } catch {
+    // Serverless environment fallback to /tmp
+    const tmpDir = process.env.TMPDIR || process.env.TEMP || '/tmp';
+    return path.join(tmpDir, 'picto_buzz_db.json');
+  }
+}
 
 class DatabaseService {
   private data: DatabaseSchema = {
@@ -109,19 +123,17 @@ class DatabaseService {
     emailToId: {},
     resetTokens: {}
   };
-  private isLoaded = false;
+  private dbFilePath = '';
 
   constructor() {
+    this.dbFilePath = getDatabaseFilePath();
     this.load();
   }
 
   private load() {
     try {
-      if (!fs.existsSync(DATA_DIR)) {
-        fs.mkdirSync(DATA_DIR, { recursive: true });
-      }
-      if (fs.existsSync(DB_FILE)) {
-        const raw = fs.readFileSync(DB_FILE, 'utf-8');
+      if (this.dbFilePath && fs.existsSync(this.dbFilePath)) {
+        const raw = fs.readFileSync(this.dbFilePath, 'utf-8');
         this.data = JSON.parse(raw);
       } else {
         this.data = {
@@ -132,9 +144,7 @@ class DatabaseService {
         };
         this.save();
       }
-      this.isLoaded = true;
     } catch (e) {
-      console.error('Error loading database:', e);
       this.data = {
         users: {},
         usernameToId: {},
@@ -146,16 +156,18 @@ class DatabaseService {
 
   private save() {
     try {
-      if (!fs.existsSync(DATA_DIR)) {
-        fs.mkdirSync(DATA_DIR, { recursive: true });
+      if (this.dbFilePath) {
+        const dir = path.dirname(this.dbFilePath);
+        if (!fs.existsSync(dir)) {
+          fs.mkdirSync(dir, { recursive: true });
+        }
+        fs.writeFileSync(this.dbFilePath, JSON.stringify(this.data, null, 2), 'utf-8');
       }
-      fs.writeFileSync(DB_FILE, JSON.stringify(this.data, null, 2), 'utf-8');
     } catch (e) {
-      console.error('Error saving database:', e);
+      // Keep in-memory if disk is completely unavailable
     }
   }
 
-  // User methods
   public async createUser(username: string, email: string, passwordPlain: string, avatar: string = 'avatar_1'): Promise<UserRecord> {
     const cleanUsername = username.trim();
     const cleanEmail = email.trim().toLowerCase();
@@ -269,7 +281,7 @@ class DatabaseService {
     const token = 'rst_' + Math.random().toString(36).substring(2, 12) + Date.now().toString(36);
     this.data.resetTokens[token] = {
       userId: user.id,
-      expiresAt: Date.now() + 3600000 // 1 hour
+      expiresAt: Date.now() + 3600000
     };
     this.save();
     return token;

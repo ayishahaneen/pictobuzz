@@ -2,8 +2,21 @@ const fs = require('fs');
 const path = require('path');
 const bcrypt = require('bcryptjs');
 
-const DATA_DIR = path.join(process.cwd(), 'data');
-const DB_FILE = path.join(DATA_DIR, 'picto_buzz_db.json');
+function getDatabaseFilePath() {
+  try {
+    const defaultDataDir = path.join(process.cwd(), 'data');
+    if (!fs.existsSync(defaultDataDir)) {
+      fs.mkdirSync(defaultDataDir, { recursive: true });
+    }
+    const testFile = path.join(defaultDataDir, '.test');
+    fs.writeFileSync(testFile, 'ok');
+    fs.unlinkSync(testFile);
+    return path.join(defaultDataDir, 'picto_buzz_db.json');
+  } catch {
+    const tmpDir = process.env.TMPDIR || process.env.TEMP || '/tmp';
+    return path.join(tmpDir, 'picto_buzz_db.json');
+  }
+}
 
 class DatabaseService {
   constructor() {
@@ -13,16 +26,14 @@ class DatabaseService {
       emailToId: {},
       resetTokens: {}
     };
+    this.dbFilePath = getDatabaseFilePath();
     this.load();
   }
 
   load() {
     try {
-      if (!fs.existsSync(DATA_DIR)) {
-        fs.mkdirSync(DATA_DIR, { recursive: true });
-      }
-      if (fs.existsSync(DB_FILE)) {
-        const raw = fs.readFileSync(DB_FILE, 'utf-8');
+      if (this.dbFilePath && fs.existsSync(this.dbFilePath)) {
+        const raw = fs.readFileSync(this.dbFilePath, 'utf-8');
         this.data = JSON.parse(raw);
       } else {
         this.data = {
@@ -34,7 +45,6 @@ class DatabaseService {
         this.save();
       }
     } catch (e) {
-      console.error('Error loading database:', e);
       this.data = {
         users: {},
         usernameToId: {},
@@ -46,12 +56,15 @@ class DatabaseService {
 
   save() {
     try {
-      if (!fs.existsSync(DATA_DIR)) {
-        fs.mkdirSync(DATA_DIR, { recursive: true });
+      if (this.dbFilePath) {
+        const dir = path.dirname(this.dbFilePath);
+        if (!fs.existsSync(dir)) {
+          fs.mkdirSync(dir, { recursive: true });
+        }
+        fs.writeFileSync(this.dbFilePath, JSON.stringify(this.data, null, 2), 'utf-8');
       }
-      fs.writeFileSync(DB_FILE, JSON.stringify(this.data, null, 2), 'utf-8');
     } catch (e) {
-      console.error('Error saving database:', e);
+      // In-memory fallback
     }
   }
 
