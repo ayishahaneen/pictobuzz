@@ -10,7 +10,24 @@ class GameEngine {
   }
 
   getRoom(roomId) {
-    return this.rooms.get(roomId);
+    if (!roomId) return undefined;
+    const direct = this.rooms.get(roomId);
+    if (direct) return direct;
+
+    const upper = roomId.toUpperCase();
+    const withPrefix = upper.startsWith('ROOM_') ? upper : `ROOM_${upper}`;
+
+    for (const room of Array.from(this.rooms.values())) {
+      if (
+        room.id.toUpperCase() === upper ||
+        room.id.toUpperCase() === withPrefix ||
+        room.code.toUpperCase() === upper ||
+        room.code.toUpperCase() === upper.replace('ROOM_', '')
+      ) {
+        return room;
+      }
+    }
+    return undefined;
   }
 
   findRoomByCode(code) {

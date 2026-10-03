@@ -168,7 +168,7 @@ app.prepare().then(() => {
   });
 
   expressApp.get('/api/rooms/:id', (req, res) => {
-    const room = gameEngine.getRoom(req.params.id);
+    const room = gameEngine.getRoom(req.params.id) || gameEngine.findRoomByCode(req.params.id);
     if (!room) return res.status(404).json({ error: 'Room not found' });
     return res.json({
       id: room.id,
